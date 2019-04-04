@@ -1,0 +1,271 @@
+#ifndef XPLTHREAD_H
+#define XPLTHREAD_H
+
+#cmakedefine HAVE_VALGRIND_H	1
+#cmakedefine HAVE_MMAN_H		1
+
+/*
+	Platform defines
+
+	The use of these should be limited as much as possible.  Specific tests for
+	features of the platform are prefered.
+*/
+#ifndef LINUX
+#cmakedefine LINUX					1
+#endif
+
+#ifndef WIN32
+#cmakedefine WIN32					1
+#endif
+#ifndef WINDOWS
+#cmakedefine WINDOWS				1
+
+#endif
+
+
+#ifndef MACOSX
+#cmakedefine MACOSX					1
+#endif
+#ifndef DARWIN
+#cmakedefine DARWIN					1
+#endif
+#ifndef APPLE
+#cmakedefine APPLE					1
+#endif
+
+#cmakedefine DEBUG					1
+
+#include <xpllock.h>
+
+
+
+// gets multiplied by 2 in the old code
+#define DEFAULT_STACK_SIZE	1024 * 128
+
+#ifdef __WATCOMC__
+EXPORT char *asctime_r( const struct tm *timeptr, char *buf );
+EXPORT char *ctime_r( const time_t *timer, char *buf );
+EXPORT struct tm *gmtime_r( const time_t *timer, struct tm *tmbuf );
+EXPORT struct tm *localtime_r( const time_t *timer, struct tm *tmbuf );
+#endif
+
+#ifdef _MSC_VER
+EXPORT char *asctime_r( const struct tm *timeptr, char *buf );
+EXPORT char *ctime_r( const time_t *timer, char *buf );
+EXPORT struct tm *gmtime_r( const time_t *timer, struct tm *tmbuf );
+EXPORT struct tm *localtime_r( const time_t *timer, struct tm *tmbuf );
+#endif
+
+#define THREAD_STACK_SIZE	256 * 1024
+
+typedef void (*XplThreadFunc)( void * );
+
+typedef struct
+{
+	XplBool				running;
+	char				*identity;
+	int					id;
+} *XplThreadGroup, XplThreadGroupStruct;
+
+typedef struct XplThreadStruct
+{
+	XplBool				running;
+	XplThreadGroup		group;
+	void				*context;
+	int					exitCode;
+	int					id;
+	void				(*destroyCB)(struct XplThreadStruct *);
+} *XplThread, *XplThread_, XplThreadStruct;
+
+typedef struct XplCancelPoint
+{
+	struct XplCancelPoint	*next;	// internal use only
+	XplThread				thread;
+	XplBool					cancelled;
+	void					*context;
+}XplCancelPoint;
+
+typedef struct
+{
+	XplLock			lock;
+	XplCancelPoint	*list;
+}XplCancelList;
+
+typedef int	XplThreadGroupID;
+typedef int	XplThreadID;
+
+#define XplGetThreadID_	XplGetThreadID
+#define XplGetThreadGroupID_	XplGetThreadGroupID
+#define XplSetThreadGroupID( g )	XplGetThreadID()
+#define XplRenameThread( t, n )
+
+EXPORT XplThreadGroup _XplThreadGroupCreate( const char *identity, const char *file, unsigned long line );
+//	XplThreadGroup XplThreadGroupCreate( const char *identity );
+//		Returns non-NULL on success, NULL on error.  Sets errno
+// 		identity:	required
+#define XplThreadGroupCreate( i )	_XplThreadGroupCreate( (i), __FILE__, __LINE__ )
+EXPORT int _XplThreadGroupDestroy( XplThreadGroup *group, const char *file, unsigned long line );
+//	int XplThreadGroupDestroy( XplThreadGroup *group );
+// 		Signals each thread in the thread group with SIGTERM and blocks until
+// 		all of the threads have exited.
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		group:	required
+#define XplThreadGroupDestroy( g )	_XplThreadGroupDestroy( (g), __FILE__, __LINE__ )
+EXPORT int _XplThreadGroupStackSize( XplThreadGroup group, size_t sizeInK, const char *file, unsigned long line );
+// int XplThreadGroupStackSize( XplThreadGroup group, size_t sizeInK );
+// 		Sets the thread stack size for new threads created using the specified
+// 		thread group, does not effect already running threads.
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		group:			required
+//		sizeInK:		required	A value of zero will set it back to default.
+#define XplThreadGroupStackSize( g, s )	_XplThreadGroupStackSize( (g), (s), __FILE__, __LINE__ );
+EXPORT int _XplThreadStart( XplThreadGroup group, int (*userFunction)( XplThread ), void *context, XplThread *threadP, const char *file, unsigned long line );
+//	int XplThreadStart( XplThreadGroup group, int (*userFunction)( XplThread ), void *context, XplThread *thread );
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		group:			optional
+// 		userFunction:	required
+// 		context:		optional	Reference with thread->context inside of userFunction().
+// 		thread:			optional	Returns the new thread handle, if you use this you will
+// 			need to free the thread with XplThreadFree() when you are done with it.
+#define XplThreadStart( g, u, c, t )	_XplThreadStart( (g), (u), (c), (t), __FILE__, __LINE__ )
+EXPORT int _XplThreadWrap( XplThread *threadP, const char *file, unsigned long line );
+//	int XplThreadWrap( XplThread *thread );
+//		Special API to create a thread context on a thread that was not created
+//		with this API.
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		thread:			required	Returns the new thread handle, XplThreadWrapEnd() needs to
+// 			be called with it.
+#define XplThreadWrap( t )			_XplThreadWrap( (t), __FILE__, __LINE__ )
+EXPORT int _XplThreadWrapEnd( XplThread *threadP, const char *file, unsigned long line );
+//	int XplThreadWrapEnd( XplThread *thread );
+// 		Special API to destroy the thread context on a thread that was not
+//		created with this API but was wrapped with XplThreadWrap().
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		thread:			required	Call only with the handle returned from XplThreadWrap()
+#define XplThreadWrapEnd( t )		_XplThreadWrapEnd( (t), __FILE__, __LINE__ )
+EXPORT int _XplThreadFree( XplThread *thread, const char *file, unsigned long line );
+//	int XplThreadFree( XplThread *thread );
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		thread:		required
+#define XplThreadFree( t )			_XplThreadFree( (t), __FILE__, __LINE__ )
+//	XplThread XplGetThread( void );
+//		Returns the current thread handle on success, NULL on error
+EXPORT XplThread XplGetThread( void );
+//	XplThreadGroup XplGetThreadGroup( XplThread thread );
+//		Returns the current thread group handle on success, NULL on error
+//		thread:		optional	NULL selects the current thread
+EXPORT XplThreadGroup XplGetThreadGroup( XplThread thread );
+//	XplThreadID XplGetThreadID( void );
+//		Returns the current thread id on success, -1 on error
+EXPORT XplThreadID XplGetThreadID( void );
+//	XplThreadGroupID XplGetThreadGroupID( XplThread thread );
+//		Returns the current thread group id on success, -1 on error
+EXPORT XplThreadGroupID XplGetThreadGroupID( XplThread thread );
+//	int XplThreadSignal( XplThread thread, int sig, void *context );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:		optional	NULL selects the current thread
+EXPORT int XplThreadSignal( XplThread thread, int sig, void *context );
+//	int XplThreadGroupSignal( XplThreadGroup group, int sig, void *context );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:		optional	NULL selects the current thread
+// 		sig:		required	0 shouldn't be used, use SIGTERM, SIGINT or user defined.
+// 		context:	optional	context stored along side of signal.
+EXPORT int XplThreadGroupSignal( XplThreadGroup group, int sig, void *context );
+//	int XplThreadJoin( XplThread thread, int milliseconds );
+// 		Blocks until thread exits or the timeout expires (ETIMEDOUT).
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:			required
+// 		milliseconds:	required	Join will timeout after this many milliseconds,
+// 			0 means return immediately, -1 means wait indefinitely.
+EXPORT int XplThreadJoin( XplThread thread, int milliseconds );
+//	int XplThreadCatch( XplThread thread, void **context, int64 milliseconds );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:			optional	NULL selects current thread
+// 		context:		optional	optional pointer passed into XplThreadSignal().
+// 		milliseconds:	required	Join will timeout after this many milliseconds,
+// 			0 means return immediately, -1 means wait indefinitely.
+EXPORT int XplThreadCatch( XplThread thread, void **context, int64 milliseconds );
+//	int XplThreadStats( uint32 *total, uint32 *idle, uint32 *active, uint32 *peak );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		total:		optional
+// 		idle:		optional
+// 		active:		optional
+// 		peak:		optional
+EXPORT int XplThreadStats( uint32 *total, uint32 *idle, uint32 *active, uint32 *peak );
+//	int XplThreadCount( XplThreadGroup group );
+// 		Returns number of threads on success, -1 on error.  Sets errno
+//		group:		optional	NULL selects the current thread group
+EXPORT int XplThreadCount( XplThreadGroup group );
+//	XplBool XplThreadTerminated( XplThread thread, void *context, int64 milliseconds );
+// 		Returns TRUE if thread has been signalled with SIGTERM, FALSE if not
+//		thread:			optional	NULL selects the current thread
+// 		context:		optional	optional pointer passed into XplThreadSignal().
+// 		milliseconds:	required	Join will timeout after this many milliseconds,
+// 			0 means return immediately, -1 means wait indefinitely.
+EXPORT XplBool XplThreadTerminated( XplThread thread, void *context, int64 milliseconds );
+//	int XplThreadRegisterData( char *name );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		name:	required
+EXPORT int XplThreadRegisterData( char *name );
+//	int XplThreadSetData( XplThread thread, int slot, void *data );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:		optional	NULL selects the current thread
+// 		slot:		required	slot from XplThreadRegisterData()
+// 		data:		required	set whatever you want
+EXPORT int XplThreadSetData( XplThread thread, int slot, void *data );
+//	int XplThreadGetData( XplThread thread, int slot, void **data );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		thread:		optional	NULL selects the current thread
+// 		slot:		required	slot from XplThreadRegisterData()
+// 		data:		required
+EXPORT int XplThreadGetData( XplThread thread, int slot, void **data );
+//	int XplThreadGroupSetData( XplThreadGroup group, int slot, void *data );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		group:		optional	NULL selects the current thread group
+// 		slot:		required	slot from XplThreadRegisterData()
+// 		data:		required	set whatever you want
+EXPORT int XplThreadGroupSetData( XplThreadGroup group, int slot, void *data );
+//	int XplThreadGroupGetData( XplThreadGroup group, int slot, void **data );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		group:		optional	NULL selects the current thread group
+// 		slot:		required	slot from XplThreadRegisterData()
+// 		data:		required
+EXPORT int XplThreadGroupGetData( XplThreadGroup group, int slot, void **data );
+//	void _XplCancelInit( XplCancelList *list, XplCancelPoint *point );
+//		list:		required
+//		point:		required	Should be the address of a stack structure
+EXPORT void _XplCancelInit( XplCancelList *list, XplCancelPoint *point );
+//	void XplCancelInit( XplCancelPoint *point );
+//		point:		required	Should be the address of a stack structure
+EXPORT void XplCancelInit( XplCancelPoint *point );
+//	void XplCancelListInit( XplCancelList *list );
+//		list:		required
+EXPORT void XplCancelListInit( XplCancelList *list );
+//	int _XplCancelDestroy( XplCancelList *list, XplCancelPoint *point );
+//		list:		required
+//		point:		required	Should be the address of a stack structure
+EXPORT int _XplCancelDestroy( XplCancelList *list, XplCancelPoint *point );
+//	void XplCancelDestroy( XplCancelPoint *point );
+//		point:		required	Should be the address of a stack structure
+EXPORT void XplCancelDestroy( XplCancelPoint *point );
+//	int _XplCancelThread( XplCancelList *list, XplThread thread, void *context );
+//		Returns 0 on success, non-zero on error.  Sets errno
+//		list:		required
+// 		thread:		optional	NULL selects all threads
+// 		context:	optional	stored in cp.context
+EXPORT int _XplCancelThread( XplCancelList *list, XplThread thread, void *context );
+//	int XplCancelThread( XplThread thread, void *context );
+//		Returns 0 on success, non-zero on error.  Sets errno
+// 		thread:		optional	NULL selects all threads
+// 		context:	optional	stored in cp.context
+EXPORT int XplCancelThread( XplThread thread, void *context );
+
+//#endif	// OLD_THREADS
+
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
